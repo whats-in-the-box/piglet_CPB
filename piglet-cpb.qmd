@@ -1,0 +1,434 @@
+---
+title: "Piglet cardiopulmonary bypass induces intestinal dysbiosis and barrier dysfunction associated with systemic inflammation"
+author: "Jeffrey D. Salomon, **Haowen Qiu**, Dan Feng, Jacob Owens, Ludmila Khailova, Suzanne Osorio Lujan, John Iguidbashian, Yashpal S. Chhonker, Daryl J. Murry, Jean Jack Riethoven, Merry L. Lindsey, Amar B. Singh, Jesse A. Davidson"
+date: "2022-11-25"
+abstract: "The intestinal microbiome is essential to human health and homeostasis and is implicated in the pathophysiology of disease, including congenital heart disease and cardiac surgery. Improving the microbiome and reducing inflammatory metabolites may reduce systemic inflammation following cardiac surgery with cardiopulmonary bypass (CPB) to expedite recovery post-operatively. Limited research exists in this area and identifying animal models that can replicate changes in the human intestinal microbiome after CPB are necessary. We used a piglet model of CPB with 2 groups, CPB (n=5) and a control group with mechanical ventilation (n=7) to evaluate changes to the microbiome, intestinal barrier dysfunction, and intestinal metabolites with inflammation after CPB. We identified significant changes to the microbiome, barrier dysfunction, intestinal short chain fatty acids and eicosanoids, and elevate cytokines in the CPB/DHCA group compared to the control group at just four hours after intervention. This piglet model of CPB replicates known human changes to the intestinal flora and metabolite profile and can be used to evaluate gut interventions aimed at reducing downstream inflammation after cardiac surgery with CPB."
+doi: "https://doi.org/10.1242/dmm.049742"
+execute:
+  echo: true
+  #cache: true
+format: 
+  html:
+    toc: true
+    toc-location: left
+    reference-location: document
+    cold-fold: true
+    theme: flatly
+    self-contained: true
+    #cache: true
+
+comments: 
+        hypothesis: true
+---
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+suppressPackageStartupMessages(c(
+  library("tidyverse"),
+  library("knitr"),
+  library("knitcitations"),
+  #library("gridExtra"),
+  #library("grid"),
+  #library("ggrepel"),
+  #library("data.table"),
+  #library("DT"),
+  #library("extrafont"),
+  library("RColorBrewer"),
+  library("pheatmap"),
+  library("phyloseq"),
+  library("HMP"),
+  library("vegan"),
+  library("microbiome"),
+  library("DESeq2"),
+  library("ANCOMBC"),
+  library("corncob"),
+  library("egg"),
+  library("ggpubr"),
+  library("cowplot")
+))
+FDR <- 0.05
+LOG2FC <- 0.6
+# get start time
+start_time <- Sys.time()
+load("Salomon_piglet_ps.rda")
+```
+
+
+```{r message = FALSE, warning = FALSE, echo=FALSE}
+script_folder = "../scripts/"
+#source(paste(script_folder, "visual_functions.R", sep = ""))
+source(paste(script_folder, "qidong_r_functions.R", sep = ""))
+```
+
+
+## Project and data background
+
+Many animal models have been useful in evaluating cardiopulmonary bypass (CPB) and a variety of cardiovascular, kidney, respiratory and neurologic outcomes (Davidson et al., 2019; Grocott et al., 1999; Hubert et al., 2003; Jungwirth and De Lange, 2010; Madrahimov et al., 2018). No animal models of CPB, however, have been utilized to evaluate changes to the microbiome, intestinal barrier dysfunction or intestinal eicosanoids. As the importance of the microbiome grows, animal models are crucial to evaluate the microbiome and factors contributing to post-surgical inflammation to identify potential therapeutic interventions. In this article, we used a model of piglet CPB/DHCA to evaluate the microbiome, intestinal EBD, SCFAs and eicosanoids. We hypothesized that the CPB/DHCA group would experience microbial and metabolite derangements along with EBD and systemic inflammation compared to controls.
+
+A total of 12 piglets were used in this study, five in the CPB/DHCA group and seven in the control group receiving mechanical ventilation only. Sequences of 16S rRNA amplicon libraries generated using fecal microbial DNA resulted in a total of 12.6 million reads. Sequences were demultiplexed using Illumina software (MiSeq Control Software version 2.6) according to the manufacturer's guidelines. After the demultiplexing step, the bioinformatics analyses were performed following the Bioconductor workflow for microbiome data analysis (Callahan et al., 2016b) using R software (version 4.0).
+
+## Abundance and diversity
+
+For denoising, the R package DADA2 (version 1.18.0) (Callahan et al., 2016a) was used with the following conditions: the forward reads were truncated at position 280 and their first 17 nucleotides were trimmed, whereas the reverse ones were truncated at the position 250 and their first 21 nucleotides were trimmed, to discard positions for which nucleotide median quality was Q25 or below. High-quality sequencing reads were clustered to infer amplicon sequence variants (ASVs), and a final table of ASV counts per sample was generated after removing chimeras.In addition, a naïve Bayes taxonomy classifier (Wang et al., 2007) was used to classify each ASV against the SILVA 138.1 reference database to construct the taxonomy table, and MAFFT (version 7.407) (Katoh et al., 2002) and FASTTREE (version 2.1.11) (Price et al., 2009) programs were used to construct a phylogenetic tree. 
+
+The ASV table, taxonomy table, sample metadata, and phylogenetic tree are used to construct a `phyloseq` object for further analysis and statistical inference. A few screening and filtering steps before final phyloseq object is ready for diversity and statistical analyses. 
+
+```{r message=FALSE, warning=FALSE}
+piglet_meta = piglet_meta %>%
+        mutate(combo = case_when(
+                group == "CNT" & time == "pre" ~ "Control-Pre",
+                group == "CNT" & time == "post" ~ "Control-Post",
+                group == "CPB" & time == "pre" ~ "CPB-Pre",
+                group == "CPB" & time == "post" ~ "CPB-Post"
+        )) %>%
+        mutate(combo = factor(combo, levels = c("Control-Pre", "Control-Post", "CPB-Pre", "CPB-Post")))
+sample_data(ps) = piglet_meta
+
+piglet_meta = piglet_meta %>%
+        mutate(new_ID = case_when(ID == 6 & group == "CNT" ~ "CNT1",
+                                  ID == 20 & group == "CNT" ~ "CNT2",
+                                  ID == 21 & group == "CNT" ~ "CNT3",
+                                  ID == 44 & group == "CNT" ~ "CNT4",
+                                  ID == 50 & group == "CNT" ~ "CNT5",
+                                  ID == 54 & group == "CNT" ~ "CNT6",
+                                  ID == 59 & group == "CNT" ~ "CNT7",
+                                  ID == 9 & group == "CPB" ~ "CPB1",
+                                  ID == 12 & group == "CPB" ~ "CPB2",
+                                  ID == 14 & group == "CPB" ~ "CPB3",
+                                  ID == 23 & group == "CPB" ~ "CPB4",
+                                  ID == 48 & group == "CPB" ~ "CPB5"))
+piglet_meta = piglet_meta %>%
+        mutate(new_name = paste(new_ID, time, sep = ""))
+
+sample_data(ps) = piglet_meta
+```
+
+
+* Step 1, remove Archaea, unknowns, chloroplasts;
+
+```{r warning=FALSE, message=FALSE}
+#sample_data(ps) = piglet_meta
+# Remove Archaea, unknowns, chloroplasts
+ps.clean <- subset_taxa(ps, Kingdom == "Bacteria") %>%
+        subset_taxa(!is.na(Phylum)) %>%
+        subset_taxa(!Class %in% c("Chloroplast")) %>%
+        subset_taxa(!Family %in% c("mitochondria"))
+ps.clean
+```
+
+* Step 2, filter taxa (ASV) with low abundance (< 2);
+
+```{r warning=FALSE, message=FALSE}
+# Remove very low abundance ASV
+ps.clean.p0 <- filter_taxa(ps.clean, function (x) {sum(x > 0) >= 2}, prune=TRUE)
+ps.clean.p0
+
+```
+
+The relative abundance plot shows the taxonomic distribution in each group at the phylum and genus levels (Fig. 1). Although the Firmicutes and Bacteroidota phyla dominated both groups, the CPB/DHCA group trended towards a reduced number of different species in the post-operative samples compared to those in the pre-operative samples. The bacterial richness, indicated by the number of distinct operational taxonomic units (OTUs) identified in each sample, was not significantly different between the two groups (Fig. 2A). Phylogenic diversity showed a significant difference between the control and CPB/DHCA group in the post-operative time point (P=0.018, Fig. 2B). There was a trend towards significant reduction in α-diversity between the pre- and post-operative samples in the CPB/DHCA group (P=0.095).
+
+
+```{r message=FALSE, warning=FALSE, fig.dim=c(12, 10)}
+#| fig-cap: Fig.1 Relative bacterial abundance between CPB/DHCA group and controls.(A) Bacteria at the phylum level in each sample pre- and post-surgery for the control group and the CPB/DHCA group. There is a slightly larger increase in the amounts of Proteobacteria in the CPB/DHCA group pre-operative to post-operative samples compared to the control group. (B) Bacteria at the genus level. The legend identifies SCFA-producing organisms, which are reduced in the CPB/DHCA group post-operative samples compared to the control group post-operative samples. CPB, cardiopulmonary bypass; SCFA, short-chain fatty acid.
+
+
+#relative abundance for all sample
+ps.clean.re <- transform_sample_counts(ps.clean.p0, function(x) x / sum(x))
+ps.clean.re.df <- psmelt(ps.clean.re)
+
+ps.clean.re.df = ps.clean.re.df %>%
+        mutate(combo = case_when(
+                group == "CNT" & time == "pre" ~ "Control-Pre",
+                group == "CNT" & time == "post" ~ "Control-Post",
+                group == "CPB" & time == "pre" ~ "CPB-Pre",
+                group == "CPB" & time == "post" ~ "CPB-Post"
+        )) %>%
+        mutate(combo = factor(combo, levels = c("Control-Pre", "Control-Post", "CPB-Pre", "CPB-Post")))
+
+legend_list = c("Lachnospiraceae NK3A20 group", "Campylobacter", "Holdemanella", "Candidatus Saccharimonas", "Selenomonas", "Fibrobacter", "Eisenbergiella", "[Eubacterium] ventriosum group")
+
+
+# Using relative abundance data
+p = plotBars2(ps.clean.re.df, x = "new_name", fill = "Phylum", title = NULL, xlab = NULL, ylab = "Phylum Relative Abundance", legend = TRUE) +
+        facet_wrap(~combo, scales = "free_x", nrow = 1)
+
+q = plotBars3(ps.clean.re.df, x = "new_name", fill = "Genus", title = NULL, xlab = NULL, ylab = "Genus Relative Abundance", legend = TRUE, legend_list = legend_list) +
+        facet_wrap(~combo, scales = "free_x", nrow = 1)
+
+egg::ggarrange(p,q, ncol = 1, labels = c("A", "B"), label.args = list(gp = grid::gpar(face = "plain")))
+
+```
+
+
+Overall β-diversity (i.e. inter-subject differences in community composition) was visualized using principal coordinates analysis (PCoA) and evaluated statistically with permutational multivariate ANOVA (PERMANOVA). There were significant differences in β-diversity between groups using all four distance matrices (Bray–Curtis, P=0.017; Jaccard, P=0.003; UniFrac, P=0.018; and weighted UniFrac, P=0.017). β-diversity using UniFrac distance matrix also showed a trend toward significance after first blocking by time point (Fig. 2C), suggesting that the group undergoing CPB/DHCA is the dominant factor driving microbiome community dissimilarities.
+
+
+```{r warning=FALSE, message=FALSE}
+# plug-in alpha diversity
+samp = data.frame(data.frame(phyloseq::otu_table(ps.clean.p0))) %>%
+        rename_all(~stringr::str_replace(.,"^X",""))
+tree = phyloseq::phy_tree(ps.clean.p0)
+adiv <- data.frame(
+        phyloseq::estimate_richness(ps.clean.p0, measures = c("Observed", "Shannon", "Chao1", "Simpson", "InvSimpson", "Fisher")),
+        "PD" = picante::pd(samp, tree, include.root=FALSE)[,1],
+        select(as.tibble(phyloseq::sample_data(ps.clean.p0)), group, time, ID ) ) %>%
+        select(-se.chao1)
+
+adiv = adiv %>%
+        mutate(combo = case_when(
+                group == "CNT" & time == "pre" ~ "pre_cnt",
+                group == "CNT" & time == "post" ~ "post_cnt",
+                group == "CPB" & time == "pre" ~ "pre_cpb",
+                group == "CPB" & time == "post" ~ "post_cpb"
+        )) %>%
+        mutate(combo = factor(combo, levels = c("pre_cnt", "post_cnt", "pre_cpb", "post_cpb")))
+
+
+my_comparisons = list( c("pre_cnt", "post_cnt"), c("pre_cpb", "post_cpb"), c("pre_cnt", "pre_cpb"), c("post_cnt", "post_cpb") )
+
+alpha_1 = ggplot(adiv, aes(x = combo, y = Observed, color = group, shape = time)) + geom_point(na.rm = TRUE, size = 2) +
+        labs( x = NULL, y = "Observed OTUs") +
+        scale_color_manual(values = c("CPB" = "#0000FF", "CNT" = "#800080")) +
+        scale_x_discrete(labels = c("Control-Pre", "Control-Post", "CPB-Pre", "CPB-Post")) +
+        stat_compare_means(comparisons = my_comparisons) +
+        theme_classic()+ theme(legend.position="none")
+#alpha_1
+
+alpha_2 = ggplot(adiv, aes(x = combo, y = PD, color = group, shape = time)) + geom_point(na.rm = TRUE, size = 2) +
+        labs( x = NULL, y = "Phylogenetic diversity (PD)") +
+        scale_color_manual(values = c("CPB" = "#0000FF", "CNT" = "#800080")) +
+        scale_x_discrete(labels = c("Control-Pre", "Control-Post", "CPB-Pre", "CPB-Post")) +
+        stat_compare_means(comparisons = my_comparisons) +
+        theme_classic()+ theme(legend.position="none")
+#alpha_2
+```
+
+
+```{r warning=FALSE, message=FALSE}
+# beta_diversity
+#ordBC <- ordinate(ps.beta, "PCoA", "bray")
+#ordJC <- ordinate(ps.beta, "PCoA", "jaccard")
+ordUF <- ordinate(ps.clean.p0, "PCoA", "unifrac")
+#ordwUF <- ordinate(ps.beta, "PCoA", "wunifrac")
+
+#beta = plot_ordination(ps.clean.p0, ordUF, color = sample_data(ps.clean.p0)$group) # to get PCoA1% and PCoA2%
+
+smpID <- sample_data(ps.clean.p0)$sample
+df <- rbind(data.frame(ordUF$vectors[,1:4], sample = smpID,method = 'unifrac'))
+
+#df <- rbind(data.frame(ordBC$vectors[,1:4], sample = smpID, method = 'BC'),
+#            data.frame(ordJC$vectors[,1:4], sample = smpID,method = 'Jaccard'),
+#            data.frame(ordUF$vectors[,1:4], sample = smpID,method = 'unifrac'),
+#            data.frame(ordwUF$vectors[,1:4], sample = smpID,method = 'wunifrac'))
+
+# add sample_data info
+df <- merge(df, data.frame(sample_data(ps.clean.p0)), by = 'sample') %>%
+        mutate(combo = case_when(
+                group == "CNT" & time == "pre" ~ "pre_cnt",
+                group == "CNT" & time == "post" ~ "post_cnt",
+                group == "CPB" & time == "pre" ~ "pre_cpb",
+                group == "CPB" & time == "post" ~ "post_cpb"
+        )) %>%
+        mutate(combo = factor(combo, levels = c("pre_cnt", "post_cnt", "pre_cpb", "post_cpb")))
+
+beta = ggplot(data = df, aes(Axis.1,Axis.2, color = group, shape = time) ) +
+        geom_point(size = 2) +
+        scale_color_manual(values = c("CPB" = "#0000FF", "CNT" = "#800080")) +
+        stat_ellipse(aes_(group = df$combo)) +
+        labs( x = "PCoA 1 [21.2%]", y = "PCoA 2 [15.7%]") +
+        theme_classic()
+#beta
+```
+
+
+```{r message=FALSE, warning=FALSE,fig.dim=c(12,5)}
+#| fig-cap: Fig.2 α- and β-diversity plots in CPB/DHCA group and controls. (A) Observed operational taxonomic units (OTUs) in the CPB/DHCA group compared to the control group. There were no statistically significant differences in the total number of bacteria present between the two groups. (B) Phylogenetic diversity between the CPB/DHCA group and the control group. There was a significant decrease in phylogenetic diversity in the CPB post-operative samples compared to the control post-operative samples. (C) β-diversity via UniFrac distance matrix. There was a statistically significant difference in the β-diversity in the CPB group compared to the control group. The numbers indicate P-values using unpaired Wilcoxon rank sum test. PCoA, principal coordinates analysis.
+
+cowplot::plot_grid(alpha_1, alpha_2, beta, labels = c("A", "B", "C"), nrow = 1)
+
+```
+
+## Differential abundance analysis using ANCOMBC and corncob
+
+To identify specific taxonomic variations associated with group (CPB/DHCA versus control), differential abundance analyses were performed that identified multiple groups of organisms at the genus, family and phylum level with significant abundance differences between the CPB/DHCA group and the controls. At the genus level, SCFA-producing organisms, such as Fibrobacter, Eisenbergiella, Campylobacter, Lachnispiraceae NK3A20 group and the Eubacterium genera, among others, were reduced in the CPB/DHCA group compared to the controls (Fig. S1A) (Sun et al., 2021; Li et al., 2020). At the family level, similar groups of SCFA-producing organisms, such as Spirochaetaceae, Selenomonadaceae, Christensenellaceae and Fibrobacteraceae, were reduced in the CPB/DHCA group compared to the controls (Fig. S1B) (Peterson et al., 2022; Li et al., 2020; Liu et al., 2019; Mukherjee et al., 2020; Walker et al., 2005; Van den Abbeele et al., 2022).
+
+
+```{r warning=FALSE, message=FALSE}
+# corncob and ancombc plots: following da_template.rmd
+model = "time+group"
+
+# Agglomerate to family-level and rename
+ps.clean.p0.family = phyloseq::tax_glom(ps.clean.p0, taxrank = rank_names(ps.clean.p0)[5])
+phyloseq::taxa_names(ps.clean.p0.family) = phyloseq::tax_table(ps.clean.p0.family)[,"Family"]
+
+# Agglomerate to genus-level and rename
+ps.clean.p0.genus = phyloseq::tax_glom(ps.clean.p0, taxrank = rank_names(ps.clean.p0)[6])
+phyloseq::taxa_names(ps.clean.p0.genus) = phyloseq::tax_table(ps.clean.p0.genus)[,"Genus"]
+
+```
+
+
+```{r warning=FALSE, message=FALSE}
+taxa = "genus" # cov_combo_list is a vector not a list
+covariate = unlist(str_split(model, pattern = "\\+"))
+var1 = covariate[1]
+var2 = covariate[2]
+
+if (taxa == "genus"){
+  ps.da = ps.clean.p0.genus
+} else if (taxa == "family"){
+  ps.da = ps.clean.p0.family
+} 
+
+# ancombc
+out = ancombc(phyloseq = ps.da, formula = model, p_adj_method = "fdr", group = "time", global = TRUE ) 
+# formula: how the microbial absolute abundances for each taxon depend on the variables in metadata.
+res_ancombc = out$res
+
+df_fig1 = data.frame(res_ancombc$lfc * res_ancombc$diff_abn, check.names = FALSE) %>% rownames_to_column("taxon_id")
+df_fig2 = data.frame(res_ancombc$se * res_ancombc$diff_abn, check.names = FALSE) %>% 
+  rownames_to_column("taxon_id")
+
+colnames(df_fig2)[-1] = paste0(colnames(df_fig2)[-1], "SD")
+
+df_fig_var2 = df_fig1 %>% left_join(df_fig2, by = "taxon_id") %>%
+        column_to_rownames(., var = "taxon_id") %>%
+        dplyr::select(., starts_with(var2) ) %>%
+        dplyr::filter(., (!!as.name(colnames(df_fig1)[4])) != 0 ) %>%
+        dplyr::arrange(desc( (!!as.name( colnames(df_fig1)[4]) ))) %>%
+        rownames_to_column(., var = "taxon_id") %>%
+        dplyr::mutate(group = ifelse( (!!as.name( colnames(df_fig1)[4] )) > 0, "g1", "g2"))
+
+df_fig_var2$taxon_id = factor(df_fig_var2$taxon_id, levels = df_fig_var2$taxon_id)
+
+# genus level
+group_genus_ancombc_df = df_fig_var2
+group_genus_ancombc = ggplot(data = group_genus_ancombc_df, aes(x = taxon_id, y = groupCPB, fill = group, color = group)) +
+        geom_bar(stat = "identity", width = 0.7, position = position_dodge(width = 0.4)) +
+        geom_errorbar(aes(ymin = groupCPB - groupCPBSD, ymax = groupCPB +  groupCPBSD ), width = 0.2, position = position_dodge(0.05), color = "black") +
+        labs(x = NULL, y = "Log fold change", title = paste0("Waterfall Plot: Genus") ) +
+        theme_bw() +
+        theme(legend.position = "none", plot.title = element_text(hjust = 0.5),
+              panel.grid.minor.y = element_blank(), axis.text.x = element_text(angle = 60, hjust = 1))
+
+#group_genus_ancombc
+
+#corncob
+corncob_formula = as.formula(paste("", paste(covariate, collapse = " + "), sep = " ~ " ))
+set.seed(42)
+da_analysis <- differentialTest(formula = corncob_formula,
+                                phi.formula = corncob_formula,
+                                formula_null = ~ 1,
+                                phi.formula_null = corncob_formula,
+                                test = "Wald", boot = FALSE,
+                                data = ps.da,
+                                fdr_cutoff = 0.05)
+# genus level
+group_genus_corncob = plot(da_analysis)
+group_genus_corncob = group_genus_corncob + labs(title = "Differential abundance: Genus") + theme(legend.position = "none")
+#group_genus_corncob
+```
+
+
+
+```{r warning=FALSE, message=FALSE}
+taxa = "family" # cov_combo_list is a vector not a list
+covariate = unlist(str_split(model, pattern = "\\+"))
+var1 = covariate[1]
+var2 = covariate[2]
+
+if (taxa == "genus"){
+  ps.da = ps.clean.p0.genus
+} else if (taxa == "family"){
+  ps.da = ps.clean.p0.family
+} 
+
+# ancombc
+out = ancombc(phyloseq = ps.da, formula = model, p_adj_method = "fdr", group = "time", global = TRUE ) 
+# formula: how the microbial absolute abundances for each taxon depend on the variables in metadata.
+res_ancombc = out$res
+
+df_fig1 = data.frame(res_ancombc$lfc * res_ancombc$diff_abn, check.names = FALSE) %>% rownames_to_column("taxon_id")
+df_fig2 = data.frame(res_ancombc$se * res_ancombc$diff_abn, check.names = FALSE) %>% 
+  rownames_to_column("taxon_id")
+
+colnames(df_fig2)[-1] = paste0(colnames(df_fig2)[-1], "SD")
+
+df_fig_var2 = df_fig1 %>% left_join(df_fig2, by = "taxon_id") %>%
+        column_to_rownames(., var = "taxon_id") %>%
+        dplyr::select(., starts_with(var2) ) %>%
+        dplyr::filter(., (!!as.name(colnames(df_fig1)[4])) != 0 ) %>%
+        dplyr::arrange(desc( (!!as.name( colnames(df_fig1)[4]) ))) %>%
+        rownames_to_column(., var = "taxon_id") %>%
+        dplyr::mutate(group = ifelse( (!!as.name( colnames(df_fig1)[4] )) > 0, "g1", "g2"))
+
+df_fig_var2$taxon_id = factor(df_fig_var2$taxon_id, levels = df_fig_var2$taxon_id)
+
+# family level
+group_family_ancombc_df = df_fig_var2
+group_family_ancombc = ggplot(data = group_family_ancombc_df, aes(x = taxon_id, y = groupCPB, fill = group, color = group)) +
+        geom_bar(stat = "identity", width = 0.7, position = position_dodge(width = 0.4)) +
+        geom_errorbar(aes(ymin = groupCPB - groupCPBSD, ymax = groupCPB +  groupCPBSD ), width = 0.2, position = position_dodge(0.05), color = "black") +
+        labs(x = NULL, y = "Log fold change", title = paste0("Waterfall Plot: Family") ) +
+        theme_bw() +
+        theme(legend.position = "none", plot.title = element_text(hjust = 0.5),
+              panel.grid.minor.y = element_blank(), axis.text.x = element_text(angle = 60, hjust = 1))
+
+#group_family_ancombc
+
+#corncob
+corncob_formula = as.formula(paste("", paste(covariate, collapse = " + "), sep = " ~ " ))
+set.seed(42)
+da_analysis <- differentialTest(formula = corncob_formula,
+                                phi.formula = corncob_formula,
+                                formula_null = ~ 1,
+                                phi.formula_null = corncob_formula,
+                                test = "Wald", boot = FALSE,
+                                data = ps.da,
+                                fdr_cutoff = 0.05)
+# family level
+group_family_corncob = plot(da_analysis)
+group_family_corncob = group_family_corncob + labs(title = "Differential abundance: Family") + theme(legend.position = "none")
+#group_family_corncob
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.dim=c(12, 10)}
+#| fig-cap: Fig.S1 Differential Abundance in the CPB/DHCA Group at the Family and Genus levels. Panel A depicts taxonomic family rank changes in organism abundance of the CPB/DHCA group showing waterfall plot (top) and the corncob plot (bottom). Panel B depicts taxonomic genus rank changes in organism abundance of the CPB/DHCA group with waterfall plot (top) and corncob plot (bottom). Both waterfall plot and corncob plot show LOG fold changes of organisms that are different between the two groups. 
+
+egg::ggarrange(group_family_corncob, group_family_ancombc, group_genus_corncob, group_genus_ancombc, nrow = 2, labels = c("A", "", "B", ""), label.args = list(gp = grid::gpar(face = "plain")) ) #+ theme(plot.margin = margin(0.1,0.1,2,0.1, "cm")) 
+```
+
+
+
+## Linear discriminant analysis (LDA) effect size (LEfSE)
+
+Linear discriminant analysis (LDA) effect size (LEfSE) was performed to identify microbial biomarkers at different classification levels between the two groups (LDA score>2.0). This is used to determine the features most likely to explain differences between groups by coupling standard tests for statistical significance with additional tests encoding biological consistency and effect (Segata et al., 2011). LEfSE revealed multiple genera predominantly associated with either the CPB/DHCA group or the control group (Fig. 3A). A cladogram was developed for taxonomic representation of biologically consistent differences in the CPB/DHCA group and the control group (Fig. 3B). Broadly, several families of organisms were noted to be associated with the CPB/DHCA group in both the LEfSE plot and cladogram, including Lachnospiraceae, Christensenellaceae, Monoglobaceae and Peptococcaceae.
+
+![Fig.3 LEfSE plot and cladogram of bacterial associations in CPB/DHCA group and controls. (A) LEfSE plot providing organisms associated with either the CPB/DHCA group (green) or the control group (CNT, red). The logarithmic score details the strength of the association of each organism to a specific group. (B) Cladogram of the LEfSE analysis with organisms in the shaded green area associating more strongly with the CPB/DHCA group and organisms in the shaded red area associating with the control group. The microbial compositions were compared at different taxonomic levels. LDA, linear discriminate analysis.](Figure-3.png)
+
+
+## Canonical correlation analysis 
+
+Canonical correlation analysis was performed to evaluate the correlation between the microbiome and other sets of measured biomarkers. Network and heatmap analysis showed the strength of association between the microbiome and these biomarkers. The markers for EBD (Fig. 6A), specifically FABP2, were positively associated with pro-inflammatory organisms, such as Klebsiella, Escherichia and Enterococcus, and negatively associated with the SCFA-producing organisms Roseburia, Lachnospiraceae UCG.008, and Eubacterium. Claudin-2 was noted to have negative association with Holdemania, an SCFA-producing organism, as well as increases in Klebsiella and Peptostreptococcus, known to induce intestinal inflammation (Atarashi et al., 2017). The cytokine network and heatmap (Fig. 6B) demonstrated that many organisms were negatively associated with TNF-α, but some had a positive association with IL-1β and IL-6, such as Hungatella, Howardella and Romboutsia. Conversely, Roseburia, Fournierella and Angelakisella were noted to have a strongly negative association with TNF-α and a mildly positive or neutral association with IL-1β and IL-6. Specifically looking at SCFAs (Fig. 6C), Victivallis had significant negative association with all SCFAs in both the network and heatmap.
+
+![Fig.6 Canonical correlation analysis of the microbiome with EBD, cytokines and SCFA. (A) Network map (top) and heatmap (bottom) of the markers of EBD and associated organisms. (B) Network map (top) and heatmap (bottom) of inflammatory cytokines and associated organisms. (C) Network map (top) and heatmap (bottom) of SCFAs and associated organisms.](Figure-6.png)
+
+## Mediation analysis
+
+Mediation analysis was performed to further understand the role the microbiome played as a mediator for outcomes such as other measured biomarkers, using CPB/DHCA as the exposure. We identified two eicosanoids, PGD2 and PGE2, along with valeric acid to be significantly mediated by the microbiome, given CPB as exposure (Fig. 7A). As expected, the microbiome was not a significant mediator for intestinal EBD (Fig. 7B), which corroborates the theory that CPB directly induces intestinal barrier dysfunction, thereby creating the intestinal permeability for the microbiome and intestinal metabolites to leak out of the gut and signal systemic inflammation.
+
+![Fig.7 Mediation analysis of the microbiome on changes to EBD, cytokines, SCFAs and eicosanoids. (A) The three outcomes, PGD2, PGE2 and valeric acid, to be mediated by changes in the microbiome. Exposure is CPB, the mediator is the microbiome, and the outcomes are listed above. (B) The three markers of EBD, FABP2, claudin-2 and claudin-3, depicting no statistically significant mediation effect of the microbiome on the changes in EBD. CNT, control; FABP2, fatty acid-binding protein 2. Blue lines indicate the association between the microbiome and individual biomarkers using principal component axis 1, and shaded gray areas represent the 95% confidence intervals.](Figure-7.png)
+
+## Reproducibility
+
+The amount of time took to generate the report:
+
+```{r time_spend}
+Sys.time() - start_time
+```
+
+*R* session information:
+
+```{r R_session}
+sessionInfo()
+```
