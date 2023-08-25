@@ -1,0 +1,138 @@
+### {{pair_name}}
+
+
+```{r message=FALSE, warning=FALSE}
+combo_pair = combo$Var3[[{{i}}]]
+
+covariate = unlist(str_split(combo_pair, pattern = "-"))
+var1 = covariate[1] # exposure
+var2 = covariate[2] # outcome
+
+# compute distance matrix: mediator
+dist_jsd = phyloseq::distance(ps.clean.p0, method = "jsd") #"jsd", "unifrac", "wunifrac", "bray", "jaccard", "dpcoa"
+
+# compute distances: samples
+abx_dist = dist(cbind(factor(sample_data(ps.clean.p0)[[var1]])))
+tx_dist = as.dist(outer(factor(sample_data(ps.clean.p0)[[var1]]), factor(sample_data(ps.clean.p0)[[var1]]), "!="))
+abx_tx = (abx_dist + tx_dist)/2
+
+```
+
+
+```{r message=FALSE, warning=FALSE, eval=FALSE, echo=FALSE}
+# Exposure <-> Response
+a <- ggplot(data=sample_data(ps.clean.p0), aes(!!sym(var1), !!sym(var2) )) +
+    geom_boxplot(outlier.color=NA) +
+    geom_jitter(width = .05, size=1, aes(color=sample_data(ps.clean.p0)[[var1]]), show.legend = F) +
+    ggsci::scale_color_npg() +
+    labs(title="A",
+             subtitle= paste("Exposure ↔ Response \n ", var1, " ↔ ", var2, sep = ""),
+             x=var1, y = var2) +
+        theme_minimal() +
+        theme(plot.title=element_text(#hjust = 0.5,
+                #margin=margin(t=20, b=20),
+                size=16),
+              plot.subtitle = element_text(hjust = 0.5, size=14),
+              axis.title.x=element_text(size=13),
+              axis.text.x=element_text(size=12),
+              axis.title.y=element_text(size=13),
+              axis.text.y=element_text(size=12)
+    )
+```
+
+
+
+```{r message=FALSE, warning=FALSE, eval=FALSE, echo=FALSE}
+# Exposure <-> Mediator
+obs.pcoa = dudi.pco(cailliez(dist_jsd), scannf=F, nf=3)
+#str(obs.pcoa$li)
+#str(obs.pcoa$eig)
+#summary(obs.pcoa$eig)
+
+WdS_res = WdS.test(dist_jsd, factor(sample_data(ps.clean.p0)[[var1]]), nrep = 9999)
+
+b = ggplotify::base2grob(~s.class(obs.pcoa$li,
+                                  fac=factor(sample_data(ps.clean.p0)[[var1]]),
+                                  col=ggsci::pal_npg("nrc")(10),
+                                  sub=paste0("B    Exposure", trueunicode("<U+2194>") ,"mediator    \n\ CPB", trueunicode("<U+2194>") ,"microbiome   \n\ Wd* statistic =", round(WdS_res$statistic,2), "p =", round(WdS_res$p.value,2), sep = " "),
+                                  csub = 1.2,
+                                  possub = "topleft",
+                                  cellipse = 0),
+                         )
+
+```
+
+
+```{r warning=FALSE, message=FALSE}
+# (Mediator <-> Response) | Exposure
+#projection below:  This should remove the effect of aofib from dist_jsd.
+proj_xz <- energy:::projection(as.matrix(dist_jsd), as.matrix(abx_tx))
+m1 = proj_xz-min(proj_xz)+0.01
+diag(m1)=0
+obs.pcoa = dudi.pco(cailliez(as.dist(m1)), scannf=F, nf=2)
+#scatter(obs.pcoa)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+#PC1
+pco1 = obs.pcoa$eig[1]/sum(obs.pcoa$eig)
+
+cor_test<-cor.test(y=obs.pcoa$li$A1, x=sample_data(ps.clean.p0)[[var2]], method = "pearson")
+grob1 = grobTree(textGrob(substitute(italic(R) == a *","~~italic(p)~"="~pval,
+                                     list(a = round(cor_test$estimate, 3),
+                                          pval = round(cor_test$p.value, 3))),
+                          x = 0.65, y = 0.95, hjust = 0, gp = gpar(col = "red", fontsize = 11, fontface = "bold")))
+
+c <- ggplot(data=NULL, aes(y=obs.pcoa$li$A1, x=sample_data(ps.clean.p0)[[var2]])) +
+        geom_point() +
+        geom_smooth(method=lm) +
+        annotation_custom(grob1) +
+        labs(#title="C",
+             subtitle = paste("(Mediator ↔ Response) | Exposure\n(microbiome ↔ ", var2, ") | ", var1, sep = ""),
+             x = paste("resid", var2, "~", var1, sep = " "), y = paste("PCo1 (", scales::percent(pco1), " variability)", sep = "") ) +
+        theme_minimal() +
+        theme(plot.title=element_text(#hjust = 0.5,
+                #margin=margin(t=20, b=20),
+                size=16),
+              plot.subtitle = element_text(hjust = 0.5, size=14),
+              axis.title.x=element_text(size=13),
+              axis.text.x=element_text(size=12),
+              axis.title.y=element_text(size=13),
+              axis.text.y=element_text(size=12)       )
+c
+```
+
+```{r message=FALSE, warning=FALSE, eval=FALSE, echo=FALSE}
+#PC2
+pco2 = obs.pcoa$eig[2]/sum(obs.pcoa$eig)
+
+cor_test <- cor.test(y=obs.pcoa$li$A2, x=sample_data(ps.clean.p0)[[var2]], method = "pearson")
+grob1 = grobTree(textGrob(substitute(italic(R) == a *","~~italic(p)~"="~pval,
+                                     list(a = round(cor_test$estimate, 3),
+                                          pval = round(cor_test$p.value, 3))),
+                          x = 0.65, y = 0.95, hjust = 0, gp = gpar(col = "red", fontsize = 11, fontface = "bold")))
+
+d <- ggplot(data=NULL, aes(y=obs.pcoa$li$A2, x=sample_data(ps.clean.p0)[[var2]])) +
+        geom_point() +
+        geom_smooth(method=lm) +
+        annotation_custom(grob1) +
+        labs(#title="D",
+             subtitle = paste("(Mediator ↔ Response) | Exposure\n(microbiome ↔ ", var2, ") | ", var1, sep = ""),
+             x = paste("resid", var2, "~", var1, sep = " "), y = paste("PCo2 (", scales::percent(pco2), " variability)", sep = "") ) +
+        theme_minimal() +
+        theme(plot.title=element_text(#hjust = 0.5,
+                #margin=margin(t=20, b=20),
+                size=16),
+              plot.subtitle = element_text(hjust = 0.5, size=14),
+              axis.title.x=element_text(size=13),
+              axis.text.x=element_text(size=12),
+              axis.title.y=element_text(size=13),
+              axis.text.y=element_text(size=12)       )
+```
+
+
+```{r message=FALSE, warning=FALSE, eval=FALSE, echo=FALSE}
+grid.arrange(a, b c, d, ncol = 2, nrow = 2)
+```
+

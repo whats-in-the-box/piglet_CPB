@@ -25,28 +25,22 @@ comments:
 suppressPackageStartupMessages(c(
   library("tidyverse"),
   library("knitr"),
-  library("knitcitations"),
-  #library("gridExtra"),
-  #library("grid"),
-  #library("ggrepel"),
-  #library("data.table"),
-  #library("DT"),
-  #library("extrafont"),
-  library("RColorBrewer"),
-  library("pheatmap"),
   library("phyloseq"),
-  library("HMP"),
   library("vegan"),
   library("microbiome"),
-  library("DESeq2"),
   library("ANCOMBC"),
   library("corncob"),
   library("egg"),
   library("ggpubr"),
-  library("cowplot")
+  library("cowplot"),
+  library("mixOmics"),
+  library("picante"),
+  library("ade4"),
+  library("ggsci"),
+  library("energy"),
+  library("grid")
 ))
-FDR <- 0.05
-LOG2FC <- 0.6
+
 # get start time
 start_time <- Sys.time()
 load("Salomon_piglet_ps.rda")
@@ -57,6 +51,7 @@ load("Salomon_piglet_ps.rda")
 script_folder = "../scripts/"
 #source(paste(script_folder, "visual_functions.R", sep = ""))
 source(paste(script_folder, "qidong_r_functions.R", sep = ""))
+source(paste(script_folder, "mediation_util_functions.R", sep = ""))
 ```
 
 
@@ -170,8 +165,8 @@ tree = phyloseq::phy_tree(ps.clean.p0)
 adiv <- data.frame(
         phyloseq::estimate_richness(ps.clean.p0, measures = c("Observed", "Shannon", "Chao1", "Simpson", "InvSimpson", "Fisher")),
         "PD" = picante::pd(samp, tree, include.root=FALSE)[,1],
-        select(as.tibble(phyloseq::sample_data(ps.clean.p0)), group, time, ID ) ) %>%
-        select(-se.chao1)
+        dplyr::select(as.tibble(phyloseq::sample_data(ps.clean.p0)), group, time, ID ) ) %>%
+        dplyr::select(-se.chao1)
 
 adiv = adiv %>%
         mutate(combo = case_when(
@@ -409,13 +404,91 @@ Linear discriminant analysis (LDA) effect size (LEfSE) was performed to identify
 
 ## Canonical correlation analysis 
 
-Canonical correlation analysis was performed to evaluate the correlation between the microbiome and other sets of measured biomarkers. Network and heatmap analysis showed the strength of association between the microbiome and these biomarkers. The markers for EBD (Fig. 6A), specifically FABP2, were positively associated with pro-inflammatory organisms, such as Klebsiella, Escherichia and Enterococcus, and negatively associated with the SCFA-producing organisms Roseburia, Lachnospiraceae UCG.008, and Eubacterium. Claudin-2 was noted to have negative association with Holdemania, an SCFA-producing organism, as well as increases in Klebsiella and Peptostreptococcus, known to induce intestinal inflammation (Atarashi et al., 2017). The cytokine network and heatmap (Fig. 6B) demonstrated that many organisms were negatively associated with TNF-α, but some had a positive association with IL-1β and IL-6, such as Hungatella, Howardella and Romboutsia. Conversely, Roseburia, Fournierella and Angelakisella were noted to have a strongly negative association with TNF-α and a mildly positive or neutral association with IL-1β and IL-6. Specifically looking at SCFAs (Fig. 6C), Victivallis had significant negative association with all SCFAs in both the network and heatmap.
+Canonical correlation analysis was performed to evaluate the correlation between the microbiome and other sets of measured biomarkers. 
+
+There are two methods included in the `mixOmics` package to allow the CCA method to be regularized, such that the $\lambda1$ and $\lambda2$ are optimized, ridge approach ($L2$ norm) and shrinkage approach ($L1$ norm).
+
+To read more about CCA methodology in `mixOmics`, please visit their [website](http://mixomics.org/methods/rcca/). Case study can be found [here](http://mixomics.org/case-studies/rcca-nutrimouse-case-study/).
+
+
+```{r message=FALSE, warning=FALSE}
+ps.clean.cca = ps.clean.p0.genus
+omics_list = c("EBD", "cytokine", "SCFA") 
+```
+
+::: {.panel-tabset}
+
+```{r cca, echo = FALSE, results="asis", include=FALSE, warning=FALSE, message=FALSE}
+options(knitr.duplicate.label = 'allow')
+src_text <-
+  lapply(1:length( omics_list ),
+    function(i) {
+
+        knitr::knit_expand('cca_template.qmd',
+                       pair_name = omics_list[[i]])
+    }
+  )
+src_text <- paste(src_text, collapse = "\n")
+
+```
+
+
+```{r, echo = FALSE, results="asis", warning=FALSE, message=FALSE, fig.show='hide'}
+knit_res <- knitr::knit_child(text = unlist(src_text), quiet = TRUE)
+cat(knit_res, sep="\n")
+```
+
+
+:::
+
+Network and heatmap analysis showed the strength of association between the microbiome and these biomarkers. The markers for EBD (Fig. 6A), specifically FABP2, were positively associated with pro-inflammatory organisms, such as Klebsiella, Escherichia and Enterococcus, and negatively associated with the SCFA-producing organisms Roseburia, Lachnospiraceae UCG.008, and Eubacterium. Claudin-2 was noted to have negative association with Holdemania, an SCFA-producing organism, as well as increases in Klebsiella and Peptostreptococcus, known to induce intestinal inflammation (Atarashi et al., 2017). The cytokine network and heatmap (Fig. 6B) demonstrated that many organisms were negatively associated with TNF-α, but some had a positive association with IL-1β and IL-6, such as Hungatella, Howardella and Romboutsia. Conversely, Roseburia, Fournierella and Angelakisella were noted to have a strongly negative association with TNF-α and a mildly positive or neutral association with IL-1β and IL-6. Specifically looking at SCFAs (Fig. 6C), Victivallis had significant negative association with all SCFAs in both the network and heatmap.
 
 ![Fig.6 Canonical correlation analysis of the microbiome with EBD, cytokines and SCFA. (A) Network map (top) and heatmap (bottom) of the markers of EBD and associated organisms. (B) Network map (top) and heatmap (bottom) of inflammatory cytokines and associated organisms. (C) Network map (top) and heatmap (bottom) of SCFAs and associated organisms.](Figure-6.png)
 
 ## Mediation analysis
 
-Mediation analysis was performed to further understand the role the microbiome played as a mediator for outcomes such as other measured biomarkers, using CPB/DHCA as the exposure. We identified two eicosanoids, PGD2 and PGE2, along with valeric acid to be significantly mediated by the microbiome, given CPB as exposure (Fig. 7A). As expected, the microbiome was not a significant mediator for intestinal EBD (Fig. 7B), which corroborates the theory that CPB directly induces intestinal barrier dysfunction, thereby creating the intestinal permeability for the microbiome and intestinal metabolites to leak out of the gut and signal systemic inflammation.
+Mediation analysis was performed to further understand the role the microbiome played as a mediator for outcomes such as other measured biomarkers, using CPB/DHCA as the exposure. In statistics, mediation analysis tests a hypothetical causal chain where one variable X (**Exposure**) affects a second variable M (**Mediator**) and, in turn, that variable affects a third variable Y (**Outcome**). Mediators describe the how or why of a (typically well-established) relationship between two other variables (**Exposure and Outcome**) and are sometimes called intermediary variables, as they often describe the process through which an effect occurs. This is also sometimes called an indirect effect. 
+
+The application of mediation analysis in the analysis of microbiome data, where **the effect of a treatment on an outcome is transmitted through perturbing the microbial communities or compositional mediators**, is not straightforward. The **compositional** (i.e., each relative abundance is a non-negative value [0,1), which adds up to 1) and **high-dimensional** nature of microbiome data makes the standard mediation analysis not directly applicable to our setting.
+
+Recent years, there has been many implementation of multivariate mediation analysis for microbiome data analysis, following mediation analyses are performed using MODIMA, LDM and ccmm, testing hypotheses where **group as exposure, and one of EBD markers, or cytokines or SCFA as outcome**. 
+
+```{r}
+# automation
+outcome = colnames(piglet_meta)[c(7,9,11,13:65)]
+exposure = colnames(piglet_meta)[6]
+
+combo = expand.grid(exposure, outcome) %>%
+        mutate(Var3 = paste(Var1, Var2, sep = "-") )
+```
+
+
+::: {.panel-tabset}
+
+```{r modima, echo = FALSE, results="asis", include=FALSE, warning=FALSE, message=FALSE}
+options(knitr.duplicate.label = 'allow')
+src_text <-
+  lapply( c(1:3, 13,17:18) ,
+    function(i) {
+
+        knitr::knit_expand('modima_template.qmd',
+                       pair_name = combo$Var3[[i]])
+    }
+  )
+src_text <- paste(src_text, collapse = "\n")
+
+```
+
+
+```{r, echo = FALSE, results="asis", warning=FALSE, message=FALSE, fig.show='hide'}
+knit_res <- knitr::knit_child(text = unlist(src_text), quiet = TRUE)
+cat(knit_res, sep="\n")
+```
+
+
+:::
+
+We identified two eicosanoids, PGD2 and PGE2, along with valeric acid to be significantly mediated by the microbiome, given CPB as exposure (Fig. 7A). As expected, the microbiome was not a significant mediator for intestinal EBD (Fig. 7B), which corroborates the theory that CPB directly induces intestinal barrier dysfunction, thereby creating the intestinal permeability for the microbiome and intestinal metabolites to leak out of the gut and signal systemic inflammation.
 
 ![Fig.7 Mediation analysis of the microbiome on changes to EBD, cytokines, SCFAs and eicosanoids. (A) The three outcomes, PGD2, PGE2 and valeric acid, to be mediated by changes in the microbiome. Exposure is CPB, the mediator is the microbiome, and the outcomes are listed above. (B) The three markers of EBD, FABP2, claudin-2 and claudin-3, depicting no statistically significant mediation effect of the microbiome on the changes in EBD. CNT, control; FABP2, fatty acid-binding protein 2. Blue lines indicate the association between the microbiome and individual biomarkers using principal component axis 1, and shaded gray areas represent the 95% confidence intervals.](Figure-7.png)
 
