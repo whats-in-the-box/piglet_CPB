@@ -1,0 +1,114 @@
+
+### {{pair_name}}
+
+```{r message=FALSE, warning=FALSE}
+
+omics = omics_list[[{{i}}]]
+
+if ( omics == "EBD" ){
+        phyXpp <- subset_samples(ps.clean.cca, !is.na(claudin2) & !is.na(FABP2))
+        Mtb <- sample_data(phyXpp)[,c("claudin2","claudin3","FABP2")] %>% log()
+        
+} else if (omics == "cytokine"){
+        phyXpp <- subset_samples(ps.clean.cca, !is.na(IL_1beta))
+        Mtb <- sample_data(phyXpp)[,c(13, 15, 16)] %>% log() 
+
+} else if (omics == "SCFA"){
+        phyXpp <- subset_samples(ps.clean.cca, !is.na(valeric_acid) )
+        Mtb <- sample_data(phyXpp)[,c(17:24)] %>% log()
+
+}
+```
+
+
+**Regularized CCA using `mixOmics`**
+
+```{r message=FALSE, warning=FALSE}
+#devtools::install_github('mortenarendt/StructuralKnowledgeModl')
+phyXpp <- filter_taxa(phyXpp, function(x) sum(x>0)>0, TRUE)
+phyXpp <- transform_sample_counts(phyXpp, function(x) x/sum(x))
+OTUtb <- data.frame(otu_table(phyXpp))
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# scale the variables
+GM <- as.matrix(scale(OTUtb, center = T)) 
+mtb <- as.matrix(scale(Mtb, center = T))
+rownames(GM) = rownames(mtb)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+set.seed(42)
+X <- mtb # extract all lipid concentration variables
+Y <- GM # extract all gene expression variables
+
+# Using the Shrinkage (shrinkage) Method
+result.rcca.shrinkage <- rcc(X, Y, method = 'shrinkage')
+```
+
+
+Sample plot
+
+```{r message=FALSE, warning=FALSE}
+# sample plots
+# plot the projection of samples for shrinkage rCCA data
+plotIndiv(result.rcca.shrinkage, comp = 1:2,
+          ind.names = sample_data(phyXpp)$time,
+          group = sample_data(phyXpp)$group, rep.space = "XY-variate",
+          legend = TRUE, title = 'rCCA shrinkage XY-space', guide = "none", cex = 6)
+
+```
+
+
+Arrow plot
+
+```{r message=FALSE, warning=FALSE}
+plotArrow(result.rcca.shrinkage, group = sample_data(phyXpp)$group, col.per.group = color.mixo(1:2),
+          title = "rCCA shrinkage method")
+```
+
+
+Variable plot
+
+```{r message=FALSE, warning=FALSE}
+plotVar(result.rcca.shrinkage, var.names = c(TRUE, TRUE), cex = c(4,4), cutoff = 0.5,
+        title = "rCCA shrinkage comp 1-2", style = "ggplot2") 
+```
+
+
+Relevance network plot and clustered image map
+
+A more robust way to evaluate the correlation structure is through a relevance network plot. The circular nodes represent EBD markers and the rectangular nodes represent taxa. The bipartite relationships between these non-negligibly correlated features can be seen by the color of the connecting lines (edges). 
+
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+# network
+network(result.rcca.shrinkage, comp = 1:2, interactive = FALSE, color.node = c("orange","lightblue"), lwd.edge = 2, cutoff = 0.5, color.edge = rev(color.jet(100)), save = "png", name.save = paste("output/network", omics, sep = "_"))
+```
+
+
+```{r echo=FALSE}
+pngconvert( FileName = paste(paste("output/network", omics, sep = "_"), "png", sep = ".") )
+
+knitr::include_graphics(path = paste0(paste("output/network", omics, sep = "_"), ".png"))
+```
+
+
+Above graph shows the correlation structure for all bipartite relationships with a correlation above 0.5. There is a reasonably complex correlation structure; there were two clusters. 
+
+To complement the network plot, a clustered image maps (CIM) can be used (bellow). While CIM plot does not have a cutoff which aids in determining the number of feature clusters, the correlations seen here do reflect that seen in network plot – such that there are roughly three clusters.
+
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+# heatmap
+cim(result.rcca.shrinkage, comp = 1:2, margins = c(10,12), color = rev(color.jet(25)), save = "png", name.save = paste("output/heatmap", omics, sep = "_"))
+```
+
+
+```{r echo=FALSE}
+pngconvert( FileName = paste(paste("output/heatmap", omics, sep = "_"), "png", sep = ".") )
+knitr::include_graphics(path = paste0(paste("output/heatmap", omics, sep = "_"), ".png"))
+```
+
